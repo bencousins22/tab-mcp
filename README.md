@@ -1,3 +1,6 @@
+# 🏆 Production-Ready
+n**Enterprise-grade Tabcorp API MCP Server with comprehensive error handling, validation, and 30+ specialized tools**
+
 # Tabcorp API MCP Server
 
 Comprehensive Model Context Protocol (MCP) server for the Tabcorp betting API with full endpoint coverage.
