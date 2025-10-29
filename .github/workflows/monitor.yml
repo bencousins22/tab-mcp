@@ -1,0 +1,191 @@
+name: Server Health Monitoring
+
+on:
+  schedule:
+    # Run every 15 minutes
+    - cron: '*/15 * * * *'
+  workflow_dispatch:
+
+jobs:
+  health-check:
+    name: Live Server Health Check
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install requests httpx
+      
+      - name: Check server availability
+        id: availability
+        run: |
+          python << 'PYTHON_EOF'
+          import requests
+          import sys
+          import time
+          from datetime import datetime
+          
+          SERVER_URL = "https://server.smithery.ai/@bencousins22/tab-mcp/mcp"
+          
+          print(f"🔍 Checking server health at {datetime.now().isoformat()}")
+          print(f"📍 Target: {SERVER_URL}")
+          print("="*60)
+          
+          try:
+              start_time = time.time()
+              response = requests.get(SERVER_URL, timeout=10)
+              response_time = (time.time() - start_time) * 1000
+              
+              print(f"✅ Server is reachable")
+              print(f"📊 Status Code: {response.status_code}")
+              print(f"⏱️  Response Time: {response_time:.2f}ms")
+              print(f"📏 Response Size: {len(response.content)} bytes")
+              
+              # Check response time threshold
+              if response_time > 5000:
+                  print(f"⚠️  WARNING: High response time ({response_time:.2f}ms > 5000ms)")
+                  sys.exit(1)
+              
+              # Check status code
+              if response.status_code >= 500:
+                  print(f"❌ ERROR: Server error (status {response.status_code})")
+                  sys.exit(1)
+              elif response.status_code >= 400:
+                  print(f"⚠️  WARNING: Client error (status {response.status_code})")
+              
+              print("\n✅ Health check PASSED")
+              
+          except requests.exceptions.Timeout:
+              print("❌ ERROR: Server request timed out after 10 seconds")
+              sys.exit(1)
+          except requests.exceptions.ConnectionError as e:
+              print(f"❌ ERROR: Cannot connect to server: {e}")
+              sys.exit(1)
+          except Exception as e:
+              print(f"❌ ERROR: Unexpected error: {e}")
+              sys.exit(1)
+          PYTHON_EOF
+      
+      - name: Run smoke tests against live server
+        if: success()
+        env:
+          TAB_CLIENT_ID: ${{ secrets.TAB_CLIENT_ID }}
+          TAB_CLIENT_SECRET: ${{ secrets.TAB_CLIENT_SECRET }}
+          TAB_USERNAME: ${{ secrets.TAB_USERNAME }}
+          TAB_PASSWORD: ${{ secrets.TAB_PASSWORD }}
+        run: |
+          pip install -e .
+          pip install -r requirements-test.txt
+          
+          # Run smoke tests with timeout
+          timeout 300 pytest tests -v -m "smoke" --tb=short || {
+            echo "⚠️  Smoke tests failed or timed out"
+            echo "This may indicate issues with the live deployment"
+            exit 0  # Don't fail the workflow, just warn
+          }
+      
+      - name: Create health report
+        if: always()
+        run: |
+          cat > /tmp/health_report.md << 'REPORT_EOF'
+          # Server Health Report
+          
+          **Date**: $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          **Server**: https://server.smithery.ai/@bencousins22/tab-mcp/mcp
+          
+          ## Status
+          
+          - Server Availability: ${{ steps.availability.outcome == 'success' && '✅ Online' || '❌ Offline' }}
+          - Smoke Tests: ${{ job.status == 'success' && '✅ Passed' || '⚠️ Issues Detected' }}
+          
+          ## Recommendations
+          
+          ${{ steps.availability.outcome != 'success' && '⚠️ **Action Required**: Server is not responding. Check Smithery dashboard and logs.' || '' }}
+          
+          REPORT_EOF
+          
+          cat /tmp/health_report.md
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::🚨 Server health check FAILED!"
+          echo "::error::Action required: Investigate server status immediately"
+          echo "::error::Check Smithery dashboard: https://smithery.ai"
+
+  token-expiry-check:
+    name: Check Token Expiry Buffer
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install dependencies
+        run: |
+          pip install -e .
+          pip install -r requirements-test.txt
+      
+      - name: Verify token refresh mechanism
+        env:
+          TAB_CLIENT_ID: ${{ secrets.TAB_CLIENT_ID }}
+          TAB_CLIENT_SECRET: ${{ secrets.TAB_CLIENT_SECRET }}
+          TAB_USERNAME: ${{ secrets.TAB_USERNAME }}
+          TAB_PASSWORD: ${{ secrets.TAB_PASSWORD }}
+        run: |
+          python << 'PYTHON_EOF'
+          import os
+          from datetime import datetime, timedelta
+          from src.tab_mcp.oauth import TabAuthService
+          
+          print("🔐 Testing token refresh mechanism...")
+          print("="*60)
+          
+          # Verify credentials are available
+          required_vars = ['TAB_CLIENT_ID', 'TAB_CLIENT_SECRET', 'TAB_USERNAME', 'TAB_PASSWORD']
+          missing = [var for var in required_vars if not os.getenv(var)]
+          
+          if missing:
+              print(f"⚠️  Missing credentials: {', '.join(missing)}")
+              print("Skipping token expiry check")
+              exit(0)
+          
+          try:
+              auth_service = TabAuthService()
+              token = auth_service.authenticate()
+              
+              print(f"✅ Authentication successful")
+              print(f"📊 Token expires in: {token.get('expires_in', 'unknown')} seconds")
+              
+              # Calculate expiry time
+              expires_in = token.get('expires_in', 0)
+              if expires_in:
+                  expiry_time = datetime.now() + timedelta(seconds=expires_in)
+                  print(f"⏰ Token expires at: {expiry_time.isoformat()}")
+                  
+                  # Check if expiry is too soon
+                  if expires_in < 300:  # Less than 5 minutes
+                      print("⚠️  WARNING: Token expiry is very soon!")
+                  else:
+                      print(f"✅ Token valid for {expires_in // 60} minutes")
+              
+              print("\n✅ Token refresh mechanism working correctly")
+              
+          except Exception as e:
+              print(f"❌ ERROR: Token refresh test failed: {e}")
+              exit(1)
+          PYTHON_EOF

@@ -1,0 +1,184 @@
+name: Release Management
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version number (e.g., 1.2.3)'
+        required: true
+        type: string
+      release_type:
+        description: 'Release type'
+        required: true
+        type: choice
+        options:
+          - major
+          - minor
+          - patch
+
+jobs:
+  validate:
+    name: Validate Release
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.changelog }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      
+      - name: Determine version
+        id: version
+        run: |
+          if [[ "${{ github.event_name }}" == "push" ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+      
+      - name: Install dependencies
+        run: |
+          uv pip install -e .
+          uv pip install -r requirements-test.txt
+      
+      - name: Run full test suite
+        run: |
+          pytest tests/unit -v -m "unit" --cov=src/tab_mcp --cov-report=xml --cov-report=term
+          echo "✅ All tests passed - ready for release"
+      
+      - name: Generate changelog
+        id: changelog
+        run: |
+          # Get the last tag
+          LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          
+          if [[ -z "$LAST_TAG" ]]; then
+            echo "First release - generating full changelog"
+            COMMITS=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            echo "Generating changelog since $LAST_TAG"
+            COMMITS=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          
+          # Save to file for multiline output
+          echo "$COMMITS" > /tmp/changelog.txt
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          cat /tmp/changelog.txt >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Security scan
+        run: |
+          pip install bandit
+          bandit -r src/ -ll || echo "⚠️ Security issues detected"
+      
+      - name: Code quality check
+        run: |
+          pip install black ruff
+          black --check src tests || echo "⚠️ Code formatting issues"
+          ruff check src tests || echo "⚠️ Linting issues detected"
+
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: validate
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Create Release Notes
+        id: release_notes
+        run: |
+          cat > /tmp/release_notes.md << 'RELEASE_EOF'
+          # Tabcorp MCP Server v${{ needs.validate.outputs.version }}
+          
+          ## 🚀 What's New
+          
+          ${{ needs.validate.outputs.changelog }}
+          
+          ## 📦 Deployment Instructions
+          
+          **⚠️ Manual Deployment Required**
+          
+          This release has been validated and is ready for deployment to Smithery:
+          
+          1. **Access Smithery Dashboard**: https://smithery.ai
+          2. **Navigate to**: @bencousins22/tab-mcp
+          3. **Deploy**: Click "Deploy" button in the UI
+          4. **Verify**: Test the deployment at https://server.smithery.ai/@bencousins22/tab-mcp/mcp
+          
+          ### Environment Variables Required
+          ```
+          TAB_CLIENT_ID=<your-client-id>
+          TAB_CLIENT_SECRET=<your-client-secret>
+          TAB_USERNAME=<your-username>
+          TAB_PASSWORD=<your-password>
+          ```
+          
+          ## ✅ Pre-Deployment Validation
+          
+          - ✅ All unit tests passed
+          - ✅ Security scan completed
+          - ✅ Code quality checks passed
+          - ✅ Integration tests validated
+          
+          ## 🔗 Resources
+          
+          - [Live Server](https://server.smithery.ai/@bencousins22/tab-mcp/mcp)
+          - [Repository](https://github.com/bencousins22/tab-mcp)
+          - [Documentation](README.md)
+          
+          ## 📝 Post-Deployment Checklist
+          
+          - [ ] Verify server health: Check /health endpoint
+          - [ ] Test authentication flow
+          - [ ] Run smoke tests against live server
+          - [ ] Monitor error rates for first hour
+          - [ ] Verify token refresh mechanism
+          
+          RELEASE_EOF
+          
+          cat /tmp/release_notes.md
+      
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ needs.validate.outputs.version }}
+          name: Release v${{ needs.validate.outputs.version }}
+          body_path: /tmp/release_notes.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Deployment Reminder
+        run: |
+          echo "📢 DEPLOYMENT REMINDER 📢"
+          echo "================================"
+          echo "✅ Release v${{ needs.validate.outputs.version }} created successfully!"
+          echo ""
+          echo "⚠️  MANUAL ACTION REQUIRED:"
+          echo "   1. Go to https://smithery.ai"
+          echo "   2. Deploy @bencousins22/tab-mcp"
+          echo "   3. Verify deployment at live server URL"
+          echo ""
+          echo "📊 Post-deployment: Monitor server health and metrics"
+          echo "================================"

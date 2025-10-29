@@ -1,0 +1,146 @@
+name: Test Suite
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ['3.10', '3.11', '3.12']
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ matrix.python-version }}
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+      with:
+        version: "latest"
+
+    - name: Install dependencies
+      run: |
+        uv pip install -e .
+        uv pip install -r requirements-test.txt
+
+    - name: Run unit tests
+      run: |
+        pytest tests/unit -v -m "unit" --cov=src/tab_mcp --cov-report=xml --cov-report=term
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Install dependencies
+      run: |
+        uv pip install -e .
+        uv pip install -r requirements-test.txt
+
+    - name: Run integration tests
+      env:
+        TAB_CLIENT_ID: ${{ secrets.TAB_CLIENT_ID }}
+        TAB_CLIENT_SECRET: ${{ secrets.TAB_CLIENT_SECRET }}
+        TAB_USERNAME: ${{ secrets.TAB_USERNAME }}
+        TAB_PASSWORD: ${{ secrets.TAB_PASSWORD }}
+      run: |
+        pytest tests/integration -v -m "integration" --tb=short || echo "Integration tests skipped or failed (credentials may not be available)"
+
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v3
+
+    - name: Install dependencies
+      run: |
+        uv pip install -e .
+        uv pip install -r requirements-test.txt
+
+    - name: Run smoke tests
+      env:
+        TAB_CLIENT_ID: ${{ secrets.TAB_CLIENT_ID }}
+        TAB_CLIENT_SECRET: ${{ secrets.TAB_CLIENT_SECRET }}
+      run: |
+        pytest tests -v -m "smoke" --tb=short || echo "Smoke tests require credentials"
+
+  lint:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Install linting tools
+      run: |
+        pip install black ruff
+
+    - name: Check code formatting with black
+      run: |
+        black --check src tests
+
+    - name: Lint with ruff
+      run: |
+        ruff check src tests
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Bandit security scan
+      uses: tj-actions/bandit@v5.5
+      with:
+        targets: |
+          src/
+        options: "-r -ll"
