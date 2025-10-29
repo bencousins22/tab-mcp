@@ -5,7 +5,7 @@ build-backend = "uv_build"
 [project]
 name = "tab-mcp"
 version = "0.1.0"
-description = "Tabcorp API MCP server with OAuth authentication"
+description = "Comprehensive Tabcorp API MCP server with 30+ specialized tools"
 authors = [
     {name = "Tabcorp MCP", email = "mcp@tabcorp.example"}
 ]

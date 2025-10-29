@@ -1,25 +1,60 @@
 # Tabcorp API MCP Server
 
-A Model Context Protocol (MCP) server for the Tabcorp betting API, built with [Smithery CLI](https://smithery.ai).
+Comprehensive Model Context Protocol (MCP) server for the Tabcorp betting API with full endpoint coverage.
 
 ## Features
 
-- **OAuth Authentication**: Password grant, refresh token, and client credentials flows
-- **Tabcorp API Tools**: Query sports, competitions, markets, and place bets
-- **Session Configuration**: Store credentials securely per-session
-- **Auto-refresh**: Optional automatic token refresh when approaching expiry
+### OAuth Authentication (3 tools)
+- Password grant (personal account betting)
+- Refresh token flow
+- Client credentials (public data access)
+
+### Racing Endpoints (11 tools)
+- Get all meeting dates
+- Get meetings for a date
+- Get races in a meeting
+- Get race details
+- Get next-to-go races
+- Get race form guides
+- Get runner form
+- Get pool approximates
+- Get jackpot pools
+- Get open jackpots
+
+### Sports Endpoints (8 tools)
+- Get all open sports
+- Get open sport details
+- Get open competitions
+- Get open tournaments
+- Get open matches (in competitions and tournaments)
+- Get next-to-go matches
+
+### Sports Results (4 tools)
+- Get all resulted sports
+- Get resulted competitions
+- Get resulted matches
+- Get resulted tournaments
+
+### FootyTAB (2 tools)
+- Get all rounds
+- Get round details
+
+### Generic API Tools (2 tools)
+- Generic GET requests
+- Generic POST requests
+
+**Total: 30+ specialized Tabcorp API tools**
 
 ## Prerequisites
 
 - Python 3.10+
-- Tabcorp API credentials (client_id, client_secret, username, password)
-- Smithery API key (get yours at [smithery.ai/account/api-keys](https://smithery.ai/account/api-keys))
+- Tabcorp API credentials
+- Smithery API key: [smithery.ai/account/api-keys](https://smithery.ai/account/api-keys)
 
 ## Installation
 
 ```bash
-# Clone and install
-git clone <your-repo-url>
+git clone https://github.com/bencousins22/tab-mcp.git
 cd tab-mcp
 uv sync
 ```
@@ -27,50 +62,12 @@ uv sync
 ## Local Development
 
 ```bash
-# Run in development mode
-uv run dev
-
-# Test interactively (requires Node.js)
-uv run playground
+uv run dev  # Starts server on port 8081
 ```
-
-## MCP Tools Available
-
-### Authentication Tools
-
-1. **tab_oauth_password_grant**: Obtain access and refresh tokens using password grant
-   - Parameters: `client_id`, `client_secret`, `username`, `password`, `base_url` (all optional if set in config)
-   - Returns: `access_token`, `refresh_token`, `expires_in`, `expires_at`
-
-2. **tab_oauth_refresh**: Refresh access token using refresh_token
-   - Parameters: `refresh_token`, `client_id`, `client_secret`, `base_url`
-   - Returns: New `access_token`, `refresh_token`, `expires_in`, `expires_at`
-
-3. **tab_oauth_client_credentials**: Get token for non-account queries
-   - Parameters: `client_id`, `client_secret`, `base_url`
-   - Returns: `access_token`, `expires_in`, `expires_at`
-
-### API Query Tools
-
-4. **tab_get**: Generic GET request with bearer token
-   - Parameters: `access_token`, `path`, `params`, `jurisdiction`, `base_url`
-   - Example: `path="/v1/tab-info-service/sports"`, `params={"jurisdiction": "NSW"}`
-
-5. **tab_post**: Generic POST request with bearer token
-   - Parameters: `access_token`, `path`, `body`, `base_url`
-   - Use for placing bets or other POST operations
-
-6. **tab_list_sports**: Convenience wrapper for listing sports
-   - Parameters: `access_token`, `jurisdiction`, `base_url`
-   - Returns: List of available sports and competitions
-
-7. **hello**: Simple test tool
-   - Parameters: `name`
-   - Returns: Greeting message with jurisdiction from config
 
 ## Session Configuration
 
-When connecting to this MCP server, you can provide session-level configuration:
+Provide these when connecting to the MCP server:
 
 ```json
 {
@@ -78,79 +75,134 @@ When connecting to this MCP server, you can provide session-level configuration:
   "client_secret": "your-tabcorp-client-secret",
   "username": "your-tab-account-number",
   "password": "your-tab-password",
-  "refresh_token": "optional-cached-refresh-token",
   "jurisdiction": "NSW",
-  "base_url": "https://api.beta.tab.com.au",
-  "auto_refresh": true
+  "base_url": "https://api.beta.tab.com.au"
 }
 ```
 
 ## Example Usage
 
-### 1. Authenticate and Get Sports
-
-```python
-# First, get an access token using password grant
-auth_result = tab_oauth_password_grant()
-# Returns: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
-
-# Use the token to query sports
-sports = tab_list_sports(access_token=auth_result["access_token"])
-# Returns: {"sports": [{"id": "4", "name": "Basketball", ...}, ...]}
+### 1. Authenticate
+```javascript
+const auth = await tab_oauth_password_grant();
+// Returns: { access_token, refresh_token, expires_at, ... }
 ```
 
-### 2. Refresh Token
+### 2. Get Racing Meetings Today
+```javascript
+const dates = await racing_get_all_meeting_dates({
+  access_token: auth.access_token,
+  jurisdiction: "NSW"
+});
 
-```python
-# When token is about to expire, refresh it
-new_auth = tab_oauth_refresh(refresh_token=auth_result["refresh_token"])
-# Returns: {"access_token": "...", "refresh_token": "...", "expires_at": ...}
+const meetings = await racing_get_meetings({
+  access_token: auth.access_token,
+  meeting_date: "2025-10-29",
+  jurisdiction: "NSW"
+});
 ```
 
-### 3. Generic API Query
+### 3. Get Next-to-Go Races
+```javascript
+const nextRaces = await racing_get_next_to_go({
+  access_token: auth.access_token,
+  max_races: 10
+});
+```
 
-```python
-# Query specific competition
-competition = tab_get(
-    access_token=auth_result["access_token"],
-    path="/v1/tab-info-service/sports/Basketball/competitions/NBA",
-    params={"jurisdiction": "NSW"}
-)
+### 4. Get Sports
+```javascript
+const sports = await sports_get_all_open({
+  access_token: auth.access_token,
+  jurisdiction: "NSW"
+});
+
+const nba = await sports_get_open_competition({
+  access_token: auth.access_token,
+  sport_name: "Basketball",
+  competition_name: "NBA"
+});
+```
+
+### 5. Get FootyTAB Rounds
+```javascript
+const rounds = await footytab_get_all_rounds({
+  access_token: auth.access_token,
+  sport_name: "AFL",
+  jurisdiction: "VIC"
+});
 ```
 
 ## Deploy to Smithery
 
-1. **Push to GitHub**:
-   ```bash
-   git add .
-   git commit -m "Initial Tabcorp MCP server"
-   git remote add origin https://github.com/YOUR_USERNAME/tab-mcp.git
-   git push -u origin main
-   ```
+1. **Push to GitHub** (already done)
+2. **Deploy**: Visit [smithery.ai/new](https://smithery.ai/new)
+3. **Connect**: Select `bencousins22/tab-mcp`
+4. **Configure Secrets**:
+   - `TAB_CLIENT_ID`
+   - `TAB_CLIENT_SECRET`
+   - `TAB_USERNAME` (optional)
+   - `TAB_PASSWORD` (optional)
 
-2. **Deploy on Smithery**:
-   - Go to [smithery.ai/new](https://smithery.ai/new)
-   - Connect your GitHub repository
-   - Smithery will automatically detect the MCP server and deploy it
-   - Configure secrets in Smithery dashboard if needed
+## API Endpoints Reference
 
-3. **Use from MCP Clients**:
-   - Once deployed, connect using Smithery's SDK or any MCP client
-   - Provide session configuration with your Tabcorp credentials
+### Racing
+- `racing_get_all_meeting_dates` - All available dates
+- `racing_get_meetings` - Meetings for a date
+- `racing_get_all_races_in_meeting` - All races in meeting
+- `racing_get_race` - Single race details
+- `racing_get_next_to_go` - Next races by time
+- `racing_get_race_form` - Race form guide
+- `racing_get_runner_form` - Runner form guide
+- `racing_get_approximates` - Pool approximates
+- `racing_get_jackpot_pools` - Jackpots for date
+- `racing_get_open_jackpots` - All open jackpots
 
-## API Documentation
+### Sports
+- `sports_get_all_open` - All open sports
+- `sports_get_open_sport` - Specific sport
+- `sports_get_open_competition` - Specific competition
+- `sports_get_open_tournament` - Specific tournament
+- `sports_get_open_match_in_competition` - Match in competition
+- `sports_get_open_match_in_tournament` - Match in tournament
+- `sports_get_next_to_go` - Next matches by time
 
-- [Tabcorp API Docs](https://api.beta.tab.com.au/)
-- [OAuth 2.0 Flows](https://api.beta.tab.com.au/docs/authentication)
-- [MCP Protocol](https://modelcontextprotocol.io)
-- [Smithery Docs](https://smithery.ai/docs)
+### Sports Results
+- `sports_get_all_results` - All resulted sports
+- `sports_get_resulted_sport` - Resulted sport
+- `sports_get_resulted_competition` - Resulted competition
+- `sports_get_resulted_match_in_competition` - Match results
 
-## Security Notes
+### FootyTAB
+- `footytab_get_all_rounds` - All rounds for sport
+- `footytab_get_round_details` - Specific round details
 
-- Never commit credentials to version control
-- Use Smithery's secure configuration management for production
-- Store refresh tokens securely and rotate regularly
-- Enable auto_refresh to minimize token expiry issues
+### Generic
+- `tab_get` - Any GET endpoint
+- `tab_post` - Any POST endpoint
+
+## Supported Jurisdictions
+
+- `NSW` - New South Wales
+- `VIC` - Victoria
+- `QLD` - Queensland
+- `SA` - South Australia
+- `TAS` - Tasmania
+- `ACT` - Australian Capital Territory
+- `NT` - Northern Territory
+
+## Race Types
+
+- `R` - Thoroughbred Racing
+- `H` - Harness Racing
+- `G` - Greyhound Racing
+
+## Resources
+
+- **Repository**: https://github.com/bencousins22/tab-mcp
+- **Tabcorp API**: https://api.beta.tab.com.au/
+- **MCP Protocol**: https://modelcontextprotocol.io
+- **Smithery**: https://smithery.ai
 
 ## License
 
