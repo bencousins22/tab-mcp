@@ -64,7 +64,7 @@ class ConfigSchema(BaseModel):
 @smithery.server(config_schema=ConfigSchema)
 def create_server() -> FastMCP:
     """Create and configure the production-ready Tabcorp MCP server"""
-    server = FastMCP("Tabcorp API Server", version="1.0.0")
+    server = FastMCP("Tabcorp API Server")
 
     # ========== Helper Functions ==========
 
